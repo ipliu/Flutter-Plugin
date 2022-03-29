@@ -6,8 +6,8 @@
 
 build/
 
-./idea
-./gradle
+.idea/
+.gradle/
 *.iml
 local.properties
 .flutter-plugins-dependencies

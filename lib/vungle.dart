@@ -33,28 +33,28 @@ typedef void OnAdLeftApplicationListener(String placementId);
 class Vungle {
   static const MethodChannel _channel = const MethodChannel('flutter_vungle');
 
-  static OnInitilizeListener onInitilizeListener;
+  static OnInitilizeListener? onInitilizeListener;
 
-  static OnAdPlayableListener onAdPlayableListener;
+  static OnAdPlayableListener? onAdPlayableListener;
 
-  static OnAdStartedListener onAdStartedListener;
+  static OnAdStartedListener? onAdStartedListener;
 
   // Deprecated
-  static OnAdFinishedListener onAdFinishedListener;
+  static OnAdFinishedListener? onAdFinishedListener;
 
-  static OnAdEndListener onAdEndListener;
+  static OnAdEndListener? onAdEndListener;
 
-  static OnAdClickedListener onAdClickedListener;
+  static OnAdClickedListener? onAdClickedListener;
 
-  static OnAdViewedListener onAdViewedListener;
+  static OnAdViewedListener? onAdViewedListener;
 
-  static OnAdRewardedListener onAdRewardedListener;
+  static OnAdRewardedListener? onAdRewardedListener;
 
-  static OnAdLeftApplicationListener onAdLeftApplicationListener;
+  static OnAdLeftApplicationListener? onAdLeftApplicationListener;
 
   /// Get version of Vungle native SDK
   static Future<String> getSDKVersion() async {
-    return _channel.invokeMethod('sdkVersion');
+    return await _channel.invokeMethod('sdkVersion') ?? '';
   }
 
   /// Initialize the flutter plugin for Vungle SDK.
@@ -161,7 +161,7 @@ class Vungle {
     final bool isAdAvailable =
         await _channel.invokeMethod('isAdPlayable', <String, dynamic>{
       'placementId': placementId,
-    });
+    }) ?? false;
     return isAdAvailable;
   }
 
@@ -179,14 +179,14 @@ class Vungle {
 
   /// Get Consent Status
   static Future<UserConsentStatus> getConsentStatus() async {
-    final String status = await _channel.invokeMethod('getConsentStatus', null);
-    return _statusStringToUserConsentStatus[status];
+    final String status = await _channel.invokeMethod('getConsentStatus', null) ?? 'Accepted';
+    return _statusStringToUserConsentStatus[status]!;
   }
 
   /// Get Consent Message version
   static Future<String> getConsentMessageVersion() async {
     final String version =
-        await _channel.invokeMethod('getConsentMessageVersion', null);
+        await _channel.invokeMethod('getConsentMessageVersion', null) ?? '';
     return version;
   }
 
@@ -202,34 +202,28 @@ class Vungle {
     final String method = call.method;
 
     if (method == 'onInitialize') {
-      if (onInitilizeListener != null) {
-        onInitilizeListener();
-      }
+      onInitilizeListener?.call();
     } else {
       final String placementId = arguments['placementId'];
       if (method == 'onAdPlayable') {
         final bool playable = arguments['playable'];
-        if (onAdPlayableListener != null) {
-          onAdPlayableListener(placementId, playable);
-        }
+        onAdPlayableListener?.call(placementId, playable);
       } else if (method == 'onAdStarted') {
-        if (onAdStartedListener != null) {
-          onAdStartedListener(placementId);
-        }
+        onAdStartedListener?.call(placementId);
       } else if (method == 'onAdFinished') {
         final bool isCTAClicked = arguments['isCTAClicked'];
         final bool isCompletedView = arguments['isCompletedView'];
-        onAdFinishedListener(placementId, isCTAClicked, isCompletedView);
+        onAdFinishedListener?.call(placementId, isCTAClicked, isCompletedView);
       } else if (method == 'onAdEnd') {
-        onAdEndListener(placementId);
+        onAdEndListener?.call(placementId);
       } else if (method == 'onAdClicked') {
-        onAdClickedListener(placementId);
+        onAdClickedListener?.call(placementId);
       } else if (method == 'onAdViewed') {
-        onAdViewedListener(placementId);
+        onAdViewedListener?.call(placementId);
       } else if (method == 'onAdRewarded') {
-        onAdRewardedListener(placementId);
+        onAdRewardedListener?.call(placementId);
       } else if (method == 'onAdLeftApplication') {
-        onAdLeftApplicationListener(placementId);
+        onAdLeftApplicationListener?.call(placementId);
       } else {
         throw new MissingPluginException("Method not implemented, $method");
       }

@@ -118,7 +118,7 @@ class _MyAppState extends State<MyApp> {
               SizedBox(
                 height: 20,
               ),
-              Text('SDK Version: ${sdkVersion ?? ''}'),
+              Text('SDK Version: $sdkVersion'),
             ],
           ),
         ),

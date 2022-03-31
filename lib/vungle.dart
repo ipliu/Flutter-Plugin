@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import 'constants.dart';
+import 'vungle_error.dart';
+
 /// User Consent status
 ///
 /// This is for GDPR Users
@@ -10,52 +13,14 @@ enum UserConsentStatus {
   Denied,
 }
 
-typedef void OnInitilizeListener();
-
-typedef void OnAdPlayableListener(String placementId, bool playable);
-
-typedef void OnAdStartedListener(String placementId);
-
-// Deprecated
-typedef void OnAdFinishedListener(
-    String placementId, bool isCTAClicked, bool isCompletedView);
-
-typedef void OnAdEndListener(String placementId);
-
-typedef void OnAdClickedListener(String placementId);
-
-typedef void OnAdViewedListener(String placementId);
-
-typedef void OnAdRewardedListener(String placementId);
-
-typedef void OnAdLeftApplicationListener(String placementId);
-
 class Vungle {
-  static const MethodChannel _channel = const MethodChannel('flutter_vungle');
+  static const MethodChannel _channel = const MethodChannel(MAIN_CHANNEL);
 
-  static OnInitilizeListener? onInitilizeListener;
-
-  static OnAdPlayableListener? onAdPlayableListener;
-
-  static OnAdStartedListener? onAdStartedListener;
-
-  // Deprecated
-  static late OnAdFinishedListener onAdFinishedListener;
-
-  static late OnAdEndListener onAdEndListener;
-
-  static late OnAdClickedListener onAdClickedListener;
-
-  static late OnAdViewedListener onAdViewedListener;
-
-  static late OnAdRewardedListener onAdRewardedListener;
-
-  static late OnAdLeftApplicationListener onAdLeftApplicationListener;
+  static final Map<String, _AdMethodChannel> _adChannels = {};
 
   /// Get version of Vungle native SDK
   static Future<String> getSDKVersion() async {
-    final String? version = await _channel.invokeMethod('sdkVersion');
-    return version ?? "";
+    return await _channel.invokeMethod('sdkVersion', <String, dynamic>{}) ?? '';
   }
 
   /// Initialize the flutter plugin for Vungle SDK.
@@ -75,13 +40,41 @@ class Vungle {
   ///   //SDK has initialized, could load ads now
   /// }
   /// ```
-  static void init(String appId) {
+  static Future<void> init({
+    required String appId,
+    Function? onComplete,
+    Function(VungleError error, String errorMessage)? onFailed,
+    Function(String placementId)? onAutoCacheAd,
+  }) async {
+    final arguments = <String, dynamic>{
+      APP_ID_PARAMETER: appId,
+    };
     //register callback method handler
-    _channel.setMethodCallHandler(_handleMethod);
+    _channel.setMethodCallHandler((call) =>
+        _initMethodCall(call, onComplete, onFailed, onAutoCacheAd));
+    await _channel.invokeMethod(INIT_METHOD, arguments);
+  }
 
-    _channel.invokeMethod('init', <String, dynamic>{
-      'appId': appId,
-    });
+  static Future<dynamic> _initMethodCall(
+      MethodCall call,
+      Function? onComplete,
+      Function(VungleError, String)? onFailed,
+      Function(String)? onAutoCacheAd,
+      ) {
+    switch (call.method) {
+      case INIT_COMPLETE_METHOD:
+        onComplete?.call();
+        break;
+      case INIT_FAILED_METHOD:
+        onFailed?.call(
+            errorFromString(call.arguments[ERROR_CODE_PARAMETER]),
+            call.arguments[ERROR_MESSAGE_PARAMETER]);
+        break;
+      case INIT_AUTO_CACHE_AD_METHOD:
+        onAutoCacheAd?.call(call.arguments[PLACEMENT_ID_PARAMETER]);
+        break;
+    }
+    return Future.value(true);
   }
 
   /// Enable background download for Vungle iOS SDK.
@@ -114,10 +107,23 @@ class Vungle {
   ///   }
   /// }
   /// ```
-  static void loadAd(String placementId) {
-    _channel.invokeMethod('loadAd', <String, dynamic>{
-      'placementId': placementId,
-    });
+  static Future<void> loadAd({
+    required String placementId,
+    Function(String placementId)? onComplete,
+    Function(String placementId, VungleError error, String errorMessage)?
+    onFailed,
+  }) async {
+    _adChannels
+        .putIfAbsent(placementId, () => _AdMethodChannel(placementId))
+        .update(
+      onLoadComplete: onComplete,
+      onLoadFailed: onFailed,
+    );
+
+    final arguments = <String, dynamic>{
+      PLACEMENT_ID_PARAMETER: placementId,
+    };
+    await _channel.invokeMethod(LOAD_METHOD, arguments);
   }
 
   /// Play ad by a [placementId]
@@ -143,10 +149,33 @@ class Vungle {
   ///   }
   /// }
   /// ```
-  static void playAd(String placementId) {
-    _channel.invokeMethod('playAd', <String, dynamic>{
-      'placementId': placementId,
-    });
+  static Future<void> playAd({
+    required String placementId,
+    Function(String placementId)? onStart,
+    Function(String placementId)? onClick,
+    Function(String placementId)? onComplete,
+    Function(String placementId)? onRewarded,
+    Function(String placementId)? onAdLeftApp,
+    Function(String placementId)? onAdViewed,
+    Function(String placementId, VungleError error, String errorMessage)?
+    onFailed,
+  }) async {
+    _adChannels
+        .putIfAbsent(placementId, () => _AdMethodChannel(placementId))
+        .update(
+      onAdStart: onStart,
+      onAdClick: onClick,
+      onAdComplete: onComplete,
+      onAdRewarded: onRewarded,
+      onAdLeftApp: onAdLeftApp,
+      onAdViewed: onAdViewed,
+      onShowFailed: onFailed,
+    );
+
+    final arguments = <String, dynamic>{
+      PLACEMENT_ID_PARAMETER: placementId,
+    };
+    await _channel.invokeMethod(PLAY_METHOD, arguments);
   }
 
   /// Check if ad playable by a [placementId]
@@ -159,11 +188,11 @@ class Vungle {
   /// }
   /// ```
   static Future<bool> isAdPlayable(String placementId) async {
-    final bool? isAdAvailable =
-        await _channel.invokeMethod('isAdPlayable', <String, dynamic>{
-      'placementId': placementId,
-    });
-    return isAdAvailable ?? false;
+    final bool isAdAvailable =
+        await _channel.invokeMethod(CAN_PLAY_METHOD, <String, dynamic>{
+          PLACEMENT_ID_PARAMETER: placementId,
+    }) ?? false;
+    return isAdAvailable;
   }
 
   /// Update Consent Status
@@ -180,21 +209,15 @@ class Vungle {
 
   /// Get Consent Status
   static Future<UserConsentStatus> getConsentStatus() async {
-    final String? status = await _channel.invokeMethod('getConsentStatus', null);
-    if (status == null) {
-      return UserConsentStatus.Denied;
-    }
-    if (_statusStringToUserConsentStatus.containsKey(status)) {
-      return _statusStringToUserConsentStatus[status] ?? UserConsentStatus.Denied;
-    }
-    return UserConsentStatus.Denied;
+    final String status = await _channel.invokeMethod('getConsentStatus', <String, dynamic>{}) ?? '';
+    return _statusStringToUserConsentStatus[status] ?? UserConsentStatus.Denied;
   }
 
   /// Get Consent Message version
   static Future<String> getConsentMessageVersion() async {
-    final String? version =
-        await _channel.invokeMethod('getConsentMessageVersion', null);
-    return version ?? "";
+    final String version =
+        await _channel.invokeMethod('getConsentMessageVersion', <String, dynamic>{}) ?? '';
+    return version;
   }
 
   static const Map<String, UserConsentStatus> _statusStringToUserConsentStatus =
@@ -202,45 +225,88 @@ class Vungle {
     'Accepted': UserConsentStatus.Accepted,
     'Denied': UserConsentStatus.Denied,
   };
+}
 
-  static Future<dynamic> _handleMethod(MethodCall call) {
-    print('_handleMethod: ${call.method}, ${call.arguments}');
-    final Map<dynamic, dynamic>? arguments = call.arguments;
-    final String method = call.method;
+class _AdMethodChannel {
+  final MethodChannel channel;
+  Function(String placementId)? onLoadComplete;
+  Function(String placementId, VungleError error, String errorMessage)?
+  onLoadFailed;
+  Function(String placementId)? onAdStart;
+  Function(String placementId)? onAdClick;
+  Function(String placementId)? onAdComplete;
+  Function(String placementId)? onAdRewarded;
+  Function(String placementId)? onAdLeftApp;
+  Function(String placementId)? onAdViewed;
+  Function(String placementId, VungleError error, String errorMessage)?
+  onShowFailed;
 
-    if (method == 'onInitialize') {
-      if (onInitilizeListener != null) {
-        onInitilizeListener!();
-      }
-    } else {
-      final String placementId = arguments!['placementId'] ?? "";
-      if (method == 'onAdPlayable') {
-        final bool playable = arguments['playable'] ?? false;
-        if (onAdPlayableListener != null) {
-          onAdPlayableListener!(placementId, playable);
-        }
-      } else if (method == 'onAdStarted') {
-        if (onAdStartedListener != null) {
-          onAdStartedListener!(placementId);
-        }
-      } else if (method == 'onAdFinished') {
-        final bool isCTAClicked = arguments['isCTAClicked'] ?? false;
-        final bool isCompletedView = arguments['isCompletedView'] ?? false;
-        onAdFinishedListener(placementId, isCTAClicked, isCompletedView);
-      } else if (method == 'onAdEnd') {
-        onAdEndListener(placementId);
-      } else if (method == 'onAdClicked') {
-        onAdClickedListener(placementId);
-      } else if (method == 'onAdViewed') {
-        onAdViewedListener(placementId);
-      } else if (method == 'onAdRewarded') {
-        onAdRewardedListener(placementId);
-      } else if (method == 'onAdLeftApplication') {
-        onAdLeftApplicationListener(placementId);
-      } else {
-        throw new MissingPluginException("Method not implemented, $method");
-      }
+  _AdMethodChannel(String placementId)
+      : channel = MethodChannel('${VIDEO_AD_CHANNEL}_$placementId') {
+    channel.setMethodCallHandler(_methodCallHandler);
+  }
+
+  void update({
+    Function(String placementId)? onLoadComplete,
+    Function(String placementId, VungleError error, String errorMessage)?
+    onLoadFailed,
+    Function(String placementId)? onAdStart,
+    Function(String placementId)? onAdClick,
+    Function(String placementId)? onAdComplete,
+    Function(String placementId)? onAdRewarded,
+    Function(String placementId)? onAdLeftApp,
+    Function(String placementId)? onAdViewed,
+    Function(String placementId, VungleError error, String errorMessage)?
+    onShowFailed,
+  }) {
+    this.onLoadComplete = onLoadComplete ?? this.onLoadComplete;
+    this.onLoadFailed = onLoadFailed ?? this.onLoadFailed;
+    this.onAdStart = onAdStart ?? this.onAdStart;
+    this.onAdClick = onAdClick ?? this.onAdClick;
+    this.onAdComplete = onAdComplete ?? this.onAdComplete;
+    this.onAdRewarded = onAdRewarded ?? this.onAdRewarded;
+    this.onAdLeftApp = onAdLeftApp ?? this.onAdLeftApp;
+    this.onAdViewed = onAdViewed ?? this.onAdViewed;
+    this.onShowFailed = onShowFailed ?? this.onShowFailed;
+  }
+
+  Future _methodCallHandler(MethodCall call) async {
+    switch (call.method) {
+      case LOAD_COMPLETE_METHOD:
+        onLoadComplete?.call(call.arguments[PLACEMENT_ID_PARAMETER]);
+        break;
+      case LOAD_FAILED_METHOD:
+        onLoadFailed?.call(
+          call.arguments[PLACEMENT_ID_PARAMETER],
+          errorFromString(call.arguments[ERROR_CODE_PARAMETER]),
+          call.arguments[ERROR_MESSAGE_PARAMETER],
+        );
+        break;
+      case PLAY_START_METHOD:
+        onAdStart?.call(call.arguments[PLACEMENT_ID_PARAMETER]);
+        break;
+      case PLAY_CLICK_METHOD:
+        onAdClick?.call(call.arguments[PLACEMENT_ID_PARAMETER]);
+        break;
+      case PLAY_COMPLETE_METHOD:
+        onAdComplete?.call(call.arguments[PLACEMENT_ID_PARAMETER]);
+        break;
+      case PLAY_REWARDED_METHOD:
+        onAdRewarded?.call(call.arguments[PLACEMENT_ID_PARAMETER]);
+        break;
+      case PLAY_LEFT_APP_METHOD:
+        onAdLeftApp?.call(call.arguments[PLACEMENT_ID_PARAMETER]);
+        break;
+      case PLAY_VIEWED_METHOD:
+        onAdViewed?.call(call.arguments[PLACEMENT_ID_PARAMETER]);
+        break;
+      case PLAY_FAILED_METHOD:
+        onShowFailed?.call(
+          call.arguments[PLACEMENT_ID_PARAMETER],
+          errorFromString(call.arguments[ERROR_CODE_PARAMETER]),
+          call.arguments[ERROR_MESSAGE_PARAMETER],
+        );
+        break;
     }
-    return Future<dynamic>.value(null);
   }
 }

@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:vungle/vungle.dart';
 
 void main() {
@@ -43,45 +43,70 @@ class _MyAppState extends State<MyApp> {
     Vungle.getSDKVersion().then((value) => setState(() {
           sdkVersion = value;
         }));
-
-    Vungle.onInitilizeListener = () {
-      setState(() {
-        sdkInit = true;
-      });
-    };
-
-    Vungle.onAdPlayableListener = (placementId, playable) {
-      if (playable) {
-        setState(() {
-          adLoaded = true;
-        });
-      }
-    };
-
-    Vungle.onAdStartedListener = (placementId) {
-      print('ad started');
-    };
-
-    Vungle.onAdFinishedListener = (placementId, isCTAClicked, completedView) {
-      print(
-          'ad finished, isCTAClicked:($isCTAClicked), completedView:($completedView)');
-      setState(() {
-        adLoaded = false;
-      });
-    };
   }
 
   void onInit() {
-    Vungle.init(appId);
+    Vungle.init(
+      appId: appId,
+      onComplete: () {
+        print('init complete');
+        setState(() {
+          sdkInit = true;
+        });
+      },
+      onFailed: (error, errorMessage) {
+        print('init failed. error: $error $errorMessage');
+      },
+      onAutoCacheAd: (placementId) {
+        print('auto cache ad available, placementId: $placementId');
+      },
+    );
   }
 
   void onLoadAd() {
-    Vungle.loadAd(placementId);
+    Vungle.loadAd(
+      placementId: placementId,
+      onComplete: (placementId) {
+        print('loadAd complete. placementId: $placementId');
+        setState(() {
+          adLoaded = true;
+        });
+      },
+      onFailed: (placementId, error, errorMessage) {
+        print('loadAd failed. placementId: $placementId, error: $error $errorMessage');
+      },
+    );
   }
 
   void onPlayAd() async {
     if (await Vungle.isAdPlayable(placementId)) {
-      Vungle.playAd(placementId);
+      Vungle.playAd(
+        placementId: placementId,
+        onStart: (placementId) {
+          print('playAd start. placementId: $placementId');
+        },
+        onComplete: (placementId) {
+          print('playAd complete. placementId: $placementId');
+          setState(() {
+            adLoaded = false;
+          });
+        },
+        onRewarded: (placementId) {
+          print('playAd rewarded. placementId: $placementId');
+        },
+        onClick: (placementId) {
+          print('playAd click. placementId: $placementId');
+        },
+        onAdLeftApp: (placementId) {
+          print('playAd left app. placementId: $placementId');
+        },
+        onAdViewed: (placementId) {
+          print('playAd viewed. placementId: $placementId');
+        },
+        onFailed: (placementId, error, errorMessage) {
+          print('playAd failed. placementId: $placementId, error: $error $errorMessage');
+        },
+      );
     } else {
       print('The ad is not ready to play');
     }

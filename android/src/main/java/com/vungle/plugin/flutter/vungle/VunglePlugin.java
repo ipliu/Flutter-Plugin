@@ -1,8 +1,10 @@
 package com.vungle.plugin.flutter.vungle;
 
 import android.content.Context;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.vungle.warren.AdConfig;
 import com.vungle.warren.BuildConfig;
@@ -13,14 +15,31 @@ import java.util.HashMap;
 import java.util.Map;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
+import io.flutter.embedding.engine.plugins.activity.ActivityAware;
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
 import io.flutter.plugin.common.BinaryMessenger;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
+import io.flutter.plugin.common.StandardMethodCodec;
 
 /** VunglePlugin */
-public class VunglePlugin implements FlutterPlugin, MethodCallHandler {
+public class VunglePlugin implements FlutterPlugin, MethodCallHandler, ActivityAware {
+  private static final String TAG = "VunglePlugin";
+
+  private static <T> T requireNonNull(T obj) {
+    if (obj == null) {
+      throw new IllegalArgumentException();
+    }
+    return obj;
+  }
+
+  // This is always null when not using v2 embedding.
+  @Nullable private FlutterPluginBinding pluginBinding;
+  @Nullable private AdInstanceManager instanceManager;
+  @Nullable private AdMessageCodec adMessageCodec;
+
   private Context context;
   private MethodChannel channel;
   private Map<String, MethodChannel> placementChannels;
@@ -28,11 +47,20 @@ public class VunglePlugin implements FlutterPlugin, MethodCallHandler {
 
   @Override
   public void onAttachedToEngine(@NonNull FlutterPluginBinding binding) {
-    channel = new MethodChannel(binding.getBinaryMessenger(), VungleConstants.MAIN_CHANNEL);
+    pluginBinding = binding;
+    adMessageCodec = new AdMessageCodec(binding.getApplicationContext());
+    channel = new MethodChannel(
+            binding.getBinaryMessenger(),
+            VungleConstants.MAIN_CHANNEL,
+            new StandardMethodCodec(adMessageCodec));
     channel.setMethodCallHandler(this);
+    instanceManager = new AdInstanceManager(channel);
     context = binding.getApplicationContext();
     binaryMessenger = binding.getBinaryMessenger();
     placementChannels = new HashMap<>();
+
+    binding.getPlatformViewRegistry().registerViewFactory(
+            "flutter_vungle/ad_widget", new VungleViewFactory(instanceManager));
   }
 
   @Override
@@ -40,7 +68,52 @@ public class VunglePlugin implements FlutterPlugin, MethodCallHandler {
     channel.setMethodCallHandler(null);
   }
 
+  @Override
+  public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
+    if (instanceManager != null) {
+      instanceManager.setActivity(binding.getActivity());
+    }
+    if (adMessageCodec != null) {
+      adMessageCodec.setContext(binding.getActivity());
+    }
+  }
+
+  @Override
+  public void onDetachedFromActivityForConfigChanges() {
+    // Use the application context
+    if (adMessageCodec != null && pluginBinding != null) {
+      adMessageCodec.setContext(pluginBinding.getApplicationContext());
+    }
+    if (instanceManager != null) {
+      instanceManager.setActivity(null);
+    }
+  }
+
+  @Override
+  public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding binding) {
+    if (instanceManager != null) {
+      instanceManager.setActivity(binding.getActivity());
+    }
+    if (adMessageCodec != null) {
+      adMessageCodec.setContext(binding.getActivity());
+    }
+  }
+
+  @Override
+  public void onDetachedFromActivity() {
+    if (adMessageCodec != null && pluginBinding != null) {
+      adMessageCodec.setContext(pluginBinding.getApplicationContext());
+    }
+    if (instanceManager != null) {
+      instanceManager.setActivity(null);
+    }
+  }
+
   public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
+    if (instanceManager == null || pluginBinding == null) {
+      Log.e(TAG, "method call received before instanceManager initialized: " + call.method);
+      return;
+    }
     Map<?, ?> arguments = (Map<?, ?>) call.arguments;
 
     switch (call.method) {
@@ -73,6 +146,35 @@ public class VunglePlugin implements FlutterPlugin, MethodCallHandler {
         break;
       case "enableBackgroundDownload":
         // no op for this method.
+        break;
+      case "loadBannerAd":
+        final FlutterBannerAd bannerAd =
+                new FlutterBannerAd(
+                        requireNonNull(call.<Integer>argument("adId")),
+                        instanceManager,
+                        requireNonNull(call.<String>argument("placementId")),
+                        requireNonNull(call.<FlutterAdSize>argument("size")));
+        instanceManager.trackAd(bannerAd, requireNonNull(call.<Integer>argument("adId")));
+        bannerAd.load();
+        result.success(null);
+        break;
+      case "disposeAd":
+        instanceManager.disposeAd(requireNonNull(call.<Integer>argument("adId")));
+        result.success(null);
+        break;
+      case "getAdSize":
+        FlutterAd ad = instanceManager.adForId(requireNonNull(call.<Integer>argument("adId")));
+        if (ad == null) {
+          // This was called on a dart ad container that hasn't been loaded yet.
+          result.success(null);
+        } else if (ad instanceof FlutterBannerAd) {
+          result.success(((FlutterBannerAd) ad).getAdSize());
+        } else {
+          result.error(
+                  "unexpected_ad_type",
+                  "Unexpected ad type for getAdSize: " + ad,
+                  null);
+        }
         break;
       default:
         result.notImplemented();

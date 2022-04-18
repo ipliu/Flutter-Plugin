@@ -5,6 +5,9 @@ import 'package:flutter/services.dart';
 import 'constants.dart';
 import 'vungle_error.dart';
 
+export 'src/ad_containers.dart';
+export 'src/ad_listeners.dart';
+
 /// User Consent status
 ///
 /// This is for GDPR Users

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'constants.dart';
 import 'vungle_error.dart';
+import 'src/ad_instance_manager.dart';
 
 export 'src/ad_containers.dart';
 export 'src/ad_listeners.dart';
@@ -17,7 +18,8 @@ enum UserConsentStatus {
 }
 
 class Vungle {
-  static const MethodChannel _channel = const MethodChannel(MAIN_CHANNEL);
+  static final MethodChannel _channel = MethodChannel(
+      MAIN_CHANNEL, StandardMethodCodec(AdMessageCodec()));
 
   static final Map<String, _AdMethodChannel> _adChannels = {};
 
@@ -52,6 +54,10 @@ class Vungle {
     final arguments = <String, dynamic>{
       APP_ID_PARAMETER: appId,
     };
+    /// Internal init to cleanup state for hot restart.
+    /// This is a workaround for https://github.com/flutter/flutter/issues/7160.
+    _channel.invokeMethod('_init');
+
     //register callback method handler
     _channel.setMethodCallHandler((call) =>
         _initMethodCall(call, onComplete, onFailed, onAutoCacheAd));

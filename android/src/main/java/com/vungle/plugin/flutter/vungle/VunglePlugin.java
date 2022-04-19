@@ -117,6 +117,11 @@ public class VunglePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
     Map<?, ?> arguments = (Map<?, ?>) call.arguments;
 
     switch (call.method) {
+      case "_init":
+        // Internal init. This is necessary to cleanup state on hot restart.
+        instanceManager.disposeAllAds();
+        result.success(null);
+        break;
       case "getPlatformVersion":
         result.success("Android " + android.os.Build.VERSION.RELEASE);
         break;

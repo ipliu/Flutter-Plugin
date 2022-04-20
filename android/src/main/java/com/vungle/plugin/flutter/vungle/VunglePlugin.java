@@ -65,6 +65,9 @@ public class VunglePlugin implements FlutterPlugin, MethodCallHandler, ActivityA
 
   @Override
   public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
+    if (instanceManager != null) {
+      instanceManager.disposeAllAds();
+    }
     channel.setMethodCallHandler(null);
   }
 
